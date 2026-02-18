@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Отчёт myapiperf — {{ module }}</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f8f9fa; }
+        h1, h2 { color: #2c3e50; }
+        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background: #3498db; color: white; }
+        tr:nth-child(even) { background: #f2f2f2; }
+        .plot-container { margin: 30px 0; }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Отчёт по нагрузочному тестированию</h1>
+    <p>Модуль: <strong>{{ module }}</strong></p>
+    <p>Длительность: <strong>{{ duration }} сек</strong> | Пользователи: <strong>{{ users }}</strong></p>
+
+    {% if success %}
+        <p class="success">Тестирование завершено успешно</p>
+    {% else %}
+        <p class="error">Ошибка: {{ error }}</p>
+    {% endif %}
+
+    <h2>Результаты по эндпоинтам</h2>
+    {{ table_html | safe }}
+
+    <h2>График RPS</h2>
+    <div id="rps-plot" class="plot-container"></div>
+
+    <script>
+        var rpsData = {{ rps_plot | safe }};
+        Plotly.newPlot('rps-plot', rpsData.data, rpsData.layout);
+    </script>
+</body>
+</html>
