@@ -1,9 +1,12 @@
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader
 from pathlib import Path
-import plotly.express as px
-import plotly.io as pio
-from typing import Dict, Any
+import plotly.graph_objects as go
+import json
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 def generate_report(
     csv_prefix: str,
@@ -14,72 +17,76 @@ def generate_report(
     success: bool = True,
     error: str = None
 ) -> str:
-    """
-    Генерирует красивый HTML-отчёт на основе CSV от Locust.
-    """
-    env = Environment(loader=FileSystemLoader("templates"))
+    # Настройка Jinja2
+    template_dir = Path("templates")
+    template_dir.mkdir(exist_ok=True)
+    env = Environment(loader=FileSystemLoader(str(template_dir)))
+    
     try:
         template = env.get_template("report.html")
     except Exception as e:
-        raise RuntimeError(f"Не удалось загрузить шаблон report.html: {e}")
+        logger.error(f"Шаблон не найден в {template_dir}/report.html. Ошибка: {e}")
+        raise
 
-    # Основной файл — stats
+    # 1. Загрузка основной статистики (_stats.csv)
     stats_file = Path(f"{csv_prefix}_stats.csv")
     if not stats_file.exists():
-        raise FileNotFoundError(f"Основной CSV не найден: {stats_file}")
+        raise FileNotFoundError(f"Файл статистики не найден: {stats_file}")
 
-    try:
-        df = pd.read_csv(stats_file)
-    except Exception as e:
-        raise RuntimeError(f"Ошибка чтения CSV: {e}")
-
-    # Нормализация колонок (Locust может менять названия в разных версиях)
-    column_map = {
-        "Name": "Endpoint",
-        "Request Count": "Count",
-        "# requests": "Count",
-        "Failures": "Failures",
-        "Failure Count": "Failures",
-        "Median response time": "Median (ms)",
-        "50%": "Median (ms)",
-        "Average response time": "Avg (ms)",
-        "Min response time": "Min (ms)",
-        "Max response time": "Max (ms)",
-        "Requests/s": "RPS",
-        "Requests /s": "RPS"
-    }
-
-    df = df.rename(columns={k: v for k, v in column_map.items() if k in df.columns})
-
-    # Убираем строку Aggregated
-    df = df[df["Endpoint"] != "Aggregated"].copy()
-
-    # Таблица
-    table_html = df.to_html(
-        index=False,
-        classes="table",
-        float_format="%.2f",
-        border=0,
-        escape=False
-    )
-
-    # График RPS (если колонка есть)
-    if "RPS" in df.columns and "Endpoint" in df.columns:
-        fig = px.bar(
-            df,
-            x="Endpoint",
-            y="RPS",
-            title="Requests per Second по эндпоинтам",
-            labels={"RPS": "Запросов в секунду"},
-            color="Endpoint",
-            height=500
-        )
-        fig.update_layout(showlegend=False, xaxis_tickangle=-45)
-        rps_plot = fig.to_json()
+    df_stats = pd.read_csv(stats_file)
+    
+    # Извлекаем агрегированные данные для KPI карточек
+    agg_mask = df_stats["Name"] == "Aggregated"
+    if agg_mask.any():
+        agg_row = df_stats[agg_mask].iloc[0]
+        kpis = {
+            "total_req": int(agg_row.get("Request Count", 0)),
+            "avg_rps": round(float(agg_row.get("Requests/s", 0)), 2),
+            "fail_rate": round((agg_row.get("Failure Count", 0) / agg_row.get("Request Count", 1) * 100), 2),
+            "p95": agg_row.get("95%", 0)
+        }
     else:
-        rps_plot = "{}"  # пустой график
+        kpis = {"total_req": 0, "avg_rps": 0, "fail_rate": 0, "p95": 0}
 
-    # Рендеринг
+    # Очищаем таблицу для отображения (убираем Aggregated)
+    df_display = df_stats[df_stats["Name"] != "Aggregated"].copy()
+    table_html = df_display.to_html(index=False, classes="table", border=0, justify="left")
+
+    # 2. Построение графика истории (Timeline) из _stats_history.csv
+    history_file = Path(f"{csv_prefix}_stats_history.csv")
+    timeline_json = "{}"
+    
+    if history_file.exists():
+        try:
+            df_hist = pd.read_csv(history_file)
+            # Locust использует Timestamp или время от начала теста
+            x_axis = range(len(df_hist)) 
+            
+            fig = go.Figure()
+            # Линия RPS
+            fig.add_trace(go.Scatter(
+                x=list(x_axis), y=df_hist["Requests/s"],
+                name="RPS", line=dict(color='#3498db', width=3)
+            ))
+            # Линия задержки (на правой оси)
+            fig.add_trace(go.Scatter(
+                x=list(x_axis), y=df_hist["Total Average Response Time"],
+                name="Avg Response Time (ms)", yaxis="y2", line=dict(color='#e74c3c', width=2, dash='dot')
+            ))
+
+            fig.update_layout(
+                title="Динамика производительности во времени",
+                template="plotly_white",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                yaxis=dict(title="Requests per Second (RPS)", color="#3498db"),
+                yaxis2=dict(title="Response Time (ms)", color="#e74c3c", overlaying="y", side="right"),
+                margin=dict(l=50, r=50, t=80, b=50)
+            )
+            timeline_json = fig.to_json()
+        except Exception as e:
+            logger.error(f"Ошибка при обработке истории: {e}")
+
+    # Рендеринг HTML
     html_content = template.render(
         module=module,
         duration=duration,
@@ -87,8 +94,10 @@ def generate_report(
         success=success,
         error=error,
         table_html=table_html,
-        rps_plot=rps_plot
+        timeline_plot=timeline_json,
+        kpis=kpis
     )
 
     Path(output_path).write_text(html_content, encoding="utf-8")
+    logger.info(f"Отчет успешно создан: {output_path}")
     return output_path
