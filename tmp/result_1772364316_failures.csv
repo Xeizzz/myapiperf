@@ -1,0 +1,3 @@
+Method,Name,Error,Occurrences
+GET,/health,"ConnectionResetError(54, 'Connection reset by peer')",1
+GET,/fast,"ConnectionResetError(54, 'Connection reset by peer')",1

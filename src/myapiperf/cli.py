@@ -4,13 +4,11 @@ from rich.panel import Panel
 from .orchestrator import run_load_test
 from .reporter import generate_report
 
-# Создаем объект приложения Typer
 app = typer.Typer(
     name="myapiperf",
     help="Инструмент для нагрузочного тестирования REST API",
     add_completion=False,
 )
-
 console = Console()
 
 @app.command()
@@ -20,53 +18,75 @@ def profile(
     users: int = typer.Option(20, "--users", "-u", help="Количество виртуальных пользователей"),
     spawn_rate: float = typer.Option(5.0, "--spawn-rate", help="Скорость появления пользователей (пользователей/сек)"),
     output: str = typer.Option("report.html", "--output", "-o", help="Путь к выходному отчёту"),
+    max_avg_ms: float = typer.Option(None, "--max-avg-ms", help="SLA: Макс. среднее время ответа в мс"),
+    max_fail_rate: float = typer.Option(None, "--max-fail-rate", help="SLA: Максимальный % ошибок (0-100)"),
 ):
     """
     Запуск нагрузочного тестирования и генерация отчёта.
     """
+    
+
+    sla_info = f"SLA: {max_avg_ms}ms / {max_fail_rate}%" if max_avg_ms or max_fail_rate else "SLA: Не задан"
+
     console.print(Panel.fit(
         f"[bold]Запуск профилирования[/bold]\n"
         f"Модуль: {module}\n"
-        f"Длительность: {duration} сек\n"
-        f"Пользователи: {users}\n"
-        f"Скорость появления: {spawn_rate}/сек",
+        f"Длительность: {duration} сек | Пользователи: {users}\n"
+        f"Скорость: {spawn_rate}/сек\n"
+        f"{sla_info}",
         title="myapiperf",
         border_style="green"
     ))
 
     try:
-        # Оркестратор сам найдет свободный порт, поэтому host больше не нужен в аргументах
+
         results = run_load_test(
             module=module,
             duration=duration,
             users=users,
-            spawn_rate=spawn_rate
+            spawn_rate=spawn_rate,
+            max_avg_ms=max_avg_ms,
+            max_fail_rate=max_fail_rate
         )
         
         if results["success"]:
-            console.print("[bold green]Нагрузка завершена успешно[/bold green]")
+
+            sla_passed = results.get("sla_success", True)
             
+            if sla_passed:
+                console.print("[bold green]✅ Нагрузка завершена. Все критерии SLA соблюдены![/bold green]")
+            else:
+                console.print("[bold yellow]⚠️ Нагрузка завершена, но SLA НАРУШЕН![/bold yellow]")
+                console.print(f"[red]Причина: {results.get('sla_error')}[/red]")
+            
+
             report_path = generate_report(
                 csv_prefix=results["csv_prefix"],
                 output_path=output,
                 module=module,
                 duration=duration,
                 users=users,
-                success=True
+                success=sla_passed,
+                error=results.get("sla_error") # Передаем текст ошибки SLA в отчет
             )
             
             console.print(f"[bold cyan]Отчёт сохранён: {report_path}[/bold cyan]")
-            # Автоматическое открытие отчета в браузере
-            typer.launch(report_path)  
+            typer.launch(report_path) 
+
+
+            if not sla_passed:
+                raise typer.Exit(code=1)
+                
         else:
-            console.print("[bold red]Ошибка во время нагрузки[/bold red]")
+            console.print("[bold red]❌ Ошибка во время нагрузки[/bold red]")
             console.print(results.get("error", "Неизвестная ошибка"))
+            raise typer.Exit(code=1)
             
     except Exception as e:
         console.print(f"[bold red]Критическая ошибка: {str(e)}[/bold red]")
         raise typer.Exit(code=1)
 
-# ЭТА ФУНКЦИЯ ДОЛЖНА БЫТЬ ЯВНО ОПРЕДЕЛЕНА ДЛЯ ENTRY POINTS
+
 def main():
     app()
 

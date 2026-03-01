@@ -86,6 +86,8 @@ def generate_report(
         except Exception as e:
             logger.error(f"Ошибка при обработке истории: {e}")
 
+            
+
     # Рендеринг HTML
     html_content = template.render(
         module=module,
