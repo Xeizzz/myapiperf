@@ -2,7 +2,7 @@ import subprocess
 import time
 import requests
 import socket
-import pandas as pd  # Добавили для анализа SLA
+import pandas as pd
 from pathlib import Path
 from typing import Dict, Any
 from rich.console import Console 
@@ -18,6 +18,7 @@ def find_free_port() -> int:
 
 def run_load_test(
     module: str,
+    locust_file: str,  # ДОБАВЛЕНО: путь к сценарию
     duration: int,
     users: int,
     spawn_rate: float,
@@ -48,6 +49,8 @@ def run_load_test(
         # 2. Ожидание готовности
         ready = False
         for _ in range(30):
+            if server_proc.poll() is not None: # Проверка, не упал ли сервер сразу
+                raise Exception("Процесс сервера завершился преждевременно")
             try:
                 if requests.get(f"{host}/health", timeout=1).status_code == 200:
                     ready = True
@@ -57,12 +60,12 @@ def run_load_test(
             time.sleep(0.5)
         
         if not ready:
-            raise Exception(f"Сервер не ответил на {host}/health")
+            raise Exception(f"Сервер не ответил на {host}/health за 15 секунд")
 
         # 3. Запуск Locust
         locust_cmd = [
             "uv", "run", "locust",
-            "-f", "scenarios/basic_locust.py",
+            "-f", locust_file, # ИЗМЕНЕНО: теперь используется переменная
             "--headless",
             "--host", host,
             "--users", str(users),
@@ -71,22 +74,30 @@ def run_load_test(
             "--csv", str(csv_prefix)
         ]
         
-        console.print(f"[green]🔥 Нагружаем {users} пользователей (порт {port})...[/green]")
-        subprocess.run(locust_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        console.print(f"[green]🔥 Нагружаем {users} пользователей (сценарий: {locust_file})...[/green]")
+        # Используем check=True, чтобы выбросить исключение, если Locust упадет
+        subprocess.run(locust_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         
-        # 4. Завершение серверного процесса
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+        
+    finally:
+        # 4. Гарантированное завершение сервера (блок finally сработает всегда)
         if server_proc:
             server_proc.terminate()
-            server_proc.wait(timeout=5)
+            try:
+                server_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                server_proc.kill()
 
-        # --- НОВОЕ: Логика проверки SLA ---
-        sla_success = True
-        sla_error = None
-        
-        stats_path = Path(f"{csv_prefix}_stats.csv")
-        if stats_path.exists():
+    # 5. Анализ SLA (выполняется только если нагрузка прошла успешно)
+    sla_success = True
+    sla_error = None
+    
+    stats_path = Path(f"{csv_prefix}_stats.csv")
+    if stats_path.exists():
+        try:
             df = pd.read_csv(stats_path)
-            # Берем строку Aggregated (итог всего теста)
             agg = df[df["Name"] == "Aggregated"].iloc[0]
             
             avg_ms = agg.get("Average Response Time", 0)
@@ -103,16 +114,13 @@ def run_load_test(
             if errors:
                 sla_success = False
                 sla_error = " | ".join(errors)
+        except Exception as e:
+            return {"success": False, "error": f"Ошибка анализа CSV: {e}"}
 
-        return {
-            "success": True,
-            "csv_prefix": str(csv_prefix),
-            "port": port,
-            "sla_success": sla_success,
-            "sla_error": sla_error
-        }
-
-    except Exception as e:
-        if server_proc: 
-            server_proc.terminate()
-        return {"success": False, "error": str(e)}
+    return {
+        "success": True,
+        "csv_prefix": str(csv_prefix),
+        "port": port,
+        "sla_success": sla_success,
+        "sla_error": sla_error
+    }
