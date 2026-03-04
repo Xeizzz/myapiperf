@@ -17,7 +17,7 @@ def test_cli_profile_success():
         }
         mock_report.return_value = "report.html"
 
-        # Прямая передача аргументов, как в твоем консольном запуске
+
         result = runner.invoke(app, [
             "examples.simple_api:app", 
             "--users", "5", 

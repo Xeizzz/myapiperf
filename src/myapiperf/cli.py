@@ -45,10 +45,10 @@ def profile(
     ))
 
     try:
-        # ИЗМЕНЕНИЕ 3: Передаем locust_file в оркестратор
+
         results = run_load_test(
             module=module,
-            locust_file=locust_file, # Передаем путь к файлу
+            locust_file=locust_file,
             duration=duration,
             users=users,
             spawn_rate=spawn_rate,

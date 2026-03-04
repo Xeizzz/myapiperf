@@ -116,12 +116,6 @@
                 <div class="kpi-value">{{ kpis.avg_rps }}</div>
             </div>
             <div class="kpi-card">
-                <div class="kpi-label">Ошибки</div>
-                <div class="kpi-value" style="color: {{ 'var(--error)' if kpis.fail_rate > 0 else 'var(--success)' }}">
-                    {{ kpis.fail_rate }}%
-                </div>
-            </div>
-            <div class="kpi-card">
                 <div class="kpi-label">P95 Latency</div>
                 <div class="kpi-value">{{ kpis.p95 }}<small style="font-size: 14px; font-weight: 500; color: var(--text-muted);"> ms</small></div>
             </div>

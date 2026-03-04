@@ -28,14 +28,14 @@ def generate_report(
         logger.error(f"Шаблон не найден в {template_dir}/report.html. Ошибка: {e}")
         raise
 
-    # 1. Загрузка основной статистики (_stats.csv)
+
     stats_file = Path(f"{csv_prefix}_stats.csv")
     if not stats_file.exists():
         raise FileNotFoundError(f"Файл статистики не найден: {stats_file}")
 
     df_stats = pd.read_csv(stats_file)
     
-    # Извлекаем агрегированные данные для KPI карточек
+
     agg_mask = df_stats["Name"] == "Aggregated"
     if agg_mask.any():
         agg_row = df_stats[agg_mask].iloc[0]
@@ -48,27 +48,27 @@ def generate_report(
     else:
         kpis = {"total_req": 0, "avg_rps": 0, "fail_rate": 0, "p95": 0}
 
-    # Очищаем таблицу для отображения (убираем Aggregated)
+
     df_display = df_stats[df_stats["Name"] != "Aggregated"].copy()
     table_html = df_display.to_html(index=False, classes="table", border=0, justify="left")
 
-    # 2. Построение графика истории (Timeline) из _stats_history.csv
+
     history_file = Path(f"{csv_prefix}_stats_history.csv")
     timeline_json = "{}"
     
     if history_file.exists():
         try:
             df_hist = pd.read_csv(history_file)
-            # Locust использует Timestamp или время от начала теста
+
             x_axis = range(len(df_hist)) 
             
             fig = go.Figure()
-            # Линия RPS
+
             fig.add_trace(go.Scatter(
                 x=list(x_axis), y=df_hist["Requests/s"],
                 name="RPS", line=dict(color='#3498db', width=3)
             ))
-            # Линия задержки (на правой оси)
+
             fig.add_trace(go.Scatter(
                 x=list(x_axis), y=df_hist["Total Average Response Time"],
                 name="Avg Response Time (ms)", yaxis="y2", line=dict(color='#e74c3c', width=2, dash='dot')

@@ -35,7 +35,7 @@ def run_load_test(
     server_proc = None
 
     try:
-        # 1. Запуск Uvicorn
+
         uvicorn_cmd = [
             "uv", "run", "uvicorn", module,
             "--host", "127.0.0.1",
@@ -46,7 +46,7 @@ def run_load_test(
         console.print(f"[yellow]🚀 Запуск сервера на порту {port}...[/yellow]")
         server_proc = subprocess.Popen(uvicorn_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        # 2. Ожидание готовности
+
         ready = False
         for _ in range(30):
             if server_proc.poll() is not None: # Проверка, не упал ли сервер сразу
@@ -62,10 +62,10 @@ def run_load_test(
         if not ready:
             raise Exception(f"Сервер не ответил на {host}/health за 15 секунд")
 
-        # 3. Запуск Locust
+
         locust_cmd = [
             "uv", "run", "locust",
-            "-f", locust_file, # ИЗМЕНЕНО: теперь используется переменная
+            "-f", locust_file,
             "--headless",
             "--host", host,
             "--users", str(users),
@@ -75,14 +75,14 @@ def run_load_test(
         ]
         
         console.print(f"[green]🔥 Нагружаем {users} пользователей (сценарий: {locust_file})...[/green]")
-        # Используем check=True, чтобы выбросить исключение, если Locust упадет
+
         subprocess.run(locust_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         
     except Exception as e:
         return {"success": False, "error": str(e)}
         
     finally:
-        # 4. Гарантированное завершение сервера (блок finally сработает всегда)
+
         if server_proc:
             server_proc.terminate()
             try:
@@ -90,7 +90,7 @@ def run_load_test(
             except subprocess.TimeoutExpired:
                 server_proc.kill()
 
-    # 5. Анализ SLA (выполняется только если нагрузка прошла успешно)
+
     sla_success = True
     sla_error = None
     

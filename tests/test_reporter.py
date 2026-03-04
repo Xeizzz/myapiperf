@@ -7,13 +7,13 @@ def test_generate_report_success(tmp_path):
     """
     Проверяем успешную генерацию отчета при наличии всех файлов.
     """
-    # 1. Подготовка фейковых данных
+
     csv_prefix = tmp_path / "test_perf"
     stats_file = Path(f"{csv_prefix}_stats.csv")
     history_file = Path(f"{csv_prefix}_stats_history.csv")
     output_html = tmp_path / "report.html"
 
-    # Создаем основной отчет
+
     stats_df = pd.DataFrame({
         "Name": ["/test", "Aggregated"],
         "Request Count": [100, 100],
@@ -24,7 +24,7 @@ def test_generate_report_success(tmp_path):
     })
     stats_df.to_csv(stats_file, index=False)
 
-    # Создаем историю для графика
+
     history_df = pd.DataFrame({
         "Requests/s": [5, 10, 15],
         "Total Average Response Time": [70, 80, 90],
@@ -32,8 +32,6 @@ def test_generate_report_success(tmp_path):
     })
     history_df.to_csv(history_file, index=False)
 
-    # 2. Вызов функции (убедись, что папка templates доступна)
-    # Если запуск из корня, Jinja2 найдет templates/report.html
     report_path = generate_report(
         csv_prefix=str(csv_prefix),
         output_path=str(output_html),
@@ -43,7 +41,7 @@ def test_generate_report_success(tmp_path):
         success=True
     )
 
-    # 3. Проверки
+
     assert Path(report_path).exists()
     content = Path(report_path).read_text()
     assert "my_app:app" in content
