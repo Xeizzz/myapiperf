@@ -3,32 +3,31 @@ import random
 
 class ApiUser(HttpUser):
     """
-    Пользователь для нагрузочного тестирования тестового API.
-    Имитирует реальных пользователей: чаще быстрые запросы, реже медленные и POST.
+    Оптимизированный сценарий для выявления узких мест.
     """
 
-    wait_time = between(1, 5)
+    # Уменьшаем паузу, чтобы создать реальное давление на Semaphore(5)
+    wait_time = between(0.1, 1.0)
 
-    @task(6)  # вес 6 — самый частый
+    @task(4)
     def hit_fast(self):
-        """Часто вызываем быстрый эндпоинт"""
+        """Быстрые запросы создают 'фон' RPS"""
         self.client.get("/fast")
 
-    @task(3)
+    @task(10) # Увеличиваем вес, чтобы целенаправленно забить "пул соединений"
     def hit_slow(self):
-        """Реже медленный эндпоинт"""
+        """Медленные запросы, которые будут вставать в очередь"""
         self.client.get("/slow")
 
     @task(2)
     def create_user(self):
-        """Создаём пользователя (POST)"""
         payload = {
             "name": f"user_{random.randint(1000, 9999)}",
             "email": f"user{random.randint(1000, 9999)}@example.com"
         }
-        self.client.post("/users", json=payload, name="/users (POST)")
+        # name="..." помогает группировать статистику в отчете, если URL меняются
+        self.client.post("/users", json=payload, name="/users")
 
     @task(1)
     def health_check(self):
-        """Очень редко проверяем здоровье"""
         self.client.get("/health")

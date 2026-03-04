@@ -1,13 +1,18 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import time
+import asyncio
 import random
+import time
 
 app = FastAPI(
-    title="Test API for myapiperf",
-    description="Простое приложение для тестирования нагрузочного инструмента",
-    version="0.1.0"
+    title="Bottleneck Demo API",
+    description="API с искусственным ограничением ресурсов для проверки графиков",
+    version="0.2.0"
 )
+
+# Имитируем пул соединений к базе данных (всего 5 одновременных запросов)
+# Это создаст "бутылочное горлышко"
+db_semaphore = asyncio.Semaphore(5)
 
 class UserCreate(BaseModel):
     name: str
@@ -15,25 +20,29 @@ class UserCreate(BaseModel):
 
 @app.get("/fast")
 async def fast_endpoint():
-    return {"status": "ok", "message": "Это быстрый ответ"}
+    # Быстрый эндпоинт, не трогающий "базу"
+    return {"status": "ok", "type": "fast"}
 
 @app.get("/slow")
 async def slow_endpoint():
-    delay = random.uniform(0.5, 1.5)
-    time.sleep(delay)
-    return {"status": "ok", "message": f"Медленный ответ после {delay:.2f} сек"}
+    """
+    Эндпоинт, имитирующий работу с БД через семафор.
+    Если придет 10 человек, 5 будут ждать, пока первые 5 закончат.
+    """
+    async with db_semaphore:
+        # Случайная работа "базы" от 0.1 до 0.5 сек
+        delay = random.uniform(0.1, 0.5)
+        await asyncio.sleep(delay)
+        return {"status": "ok", "waited": f"{delay:.2f}s"}
 
 @app.post("/users")
 async def create_user(user: UserCreate):
-    time.sleep(0.3)
-    if not user.name.strip():
-        raise HTTPException(status_code=400, detail="Имя не может быть пустым")
-    return {
-        "id": random.randint(1000, 9999),
-        "name": user.name,
-        "email": user.email,
-        "message": "Пользователь создан"
-    }
+    # Имитируем тяжелую запись с блокировкой
+    async with db_semaphore:
+        await asyncio.sleep(0.3)
+        if not user.name.strip():
+            raise HTTPException(status_code=400, detail="Empty name")
+        return {"id": random.randint(1, 100), "name": user.name}
 
 @app.get("/health")
 async def health_check():
